@@ -1,119 +1,160 @@
-const Usuarios = require('../models/usuarios.model');
+const Usuario = require('../models/usuario.model');
+const Producto = require('../models/productos.model');
+
 const bcrypt = require('bcrypt-nodejs');
 const jwt = require('../services/jwt');
 
-function RegistrarEmpresa(req, res) {
+function Registrar(req, res) {
     var parametros = req.body;
-    var usuarioModel = new Usuarios();
+    var usuarioModel = new Usuario();
 
-    if (req.user.rol != 'Admin') {
-        return res.status(500).send({ mensanje: "No eres admin, No puedes agregar" });
-    }else {
-        if (parametros.nombreE && parametros.usuario && parametros.password) {
-            usuarioModel.nombreE = parametros.nombreE;
-            usuarioModel.usuario = parametros.usuario;
-            usuarioModel.rol = 'Empresa';
-            Usuarios.find({ usuario: parametros.usuario }, (err, usuarioEcontrado) => {
-                if (usuarioEcontrado.length == 0) {
+    if(parametros.nombre && parametros.apellido && 
+        parametros.email && parametros.password) {
+            usuarioModel.nombre = parametros.nombre;
+            usuarioModel.apellido = parametros.apellido;
+            usuarioModel.email = parametros.email;
+            usuarioModel.rol = 'USUARIO';
+            usuarioModel.imagen = null;
+            usuarioModel.totalCarrito = 0;
+
+            Usuario.find({ email : parametros.email }, (err, usuarioEncontrado) => {
+                if ( usuarioEncontrado.length == 0 ) {
+
                     bcrypt.hash(parametros.password, null, null, (err, passwordEncriptada) => {
                         usuarioModel.password = passwordEncriptada;
+
                         usuarioModel.save((err, usuarioGuardado) => {
-                            if (err) return res.status(500).send({ mensaje: "Error en la peticion" });
-                            if (!usuarioGuardado) return res.status(404).send({ mensaje: "Error al guardar" });
-                            return res.status(200).send({ usuario: usuarioGuardado })
+                            if (err) return res.status(500)
+                                .send({ mensaje: 'Error en la peticion' });
+                            if(!usuarioGuardado) return res.status(500)
+                                .send({ mensaje: 'Error al agregar el Usuario'});
+                            
+                            return res.status(200).send({ usuario: usuarioGuardado });
                         });
-                    });
+                    });                    
                 } else {
-                    return res.status(500).send({ mensaje: "Este usuario ya existe" })
+                    return res.status(500)
+                        .send({ mensaje: 'Este correo, ya  se encuentra utilizado' });
                 }
             })
-        } else {
-            return res.status(500).send({ mensaje: "Rellenar todos los campos" })
-        }
     }
 }
 
 function Login(req, res) {
     var parametros = req.body;
+    Usuario.findOne({ email : parametros.email }, (err, usuarioEncontrado)=>{
+        if(err) return res.status(500).send({ mensaje: 'Error en la peticion' });
+        if(usuarioEncontrado){
+            // COMPARO CONTRASENA SIN ENCRIPTAR CON LA ENCRIPTADA
+            bcrypt.compare(parametros.password, usuarioEncontrado.password, 
+                (err, verificacionPassword)=>{//TRUE OR FALSE
+                    // VERIFICO SI EL PASSWORD COINCIDE EN BASE DE DATOS
+                    if ( verificacionPassword ) {
+                        // SI EL PARAMETRO OBTENERTOKEN ES TRUE, CREA EL TOKEN
+                        if(parametros.obtenerToken === 'true'){
+                            return res.status(200)
+                                .send({ token: jwt.crearToken(usuarioEncontrado) })
+                        } else {
+                            usuarioEncontrado.password = undefined;
+                            return  res.status(200)
+                                .send({ usuario: usuarioEncontrado })
+                        }
 
-    Usuarios.findOne({ usuario: parametros.usuario }, (err, usuarioEcontrado) => {
-        if (err) return res.status(500).send({ mensanje: 'Error en la peticion' });
-        if (usuarioEcontrado) {
-            bcrypt.compare(parametros.password, usuarioEcontrado.password, (err, verificacionPassword) => {
-                if (verificacionPassword) {
-                    if (parametros.obtenerToken === 'true') {
-                        return res.status(500).send({ token: jwt.crearToken(usuarioEcontrado) });
+                        
                     } else {
-                        usuarioEcontrado.password = undefined;
-                        return res.status(200).send({ usuario: usuarioEcontrado });
+                        return res.status(500)
+                            .send({ mensaje: 'Las contrasena no coincide'});
                     }
-                } else {
-                    return res.status(500).send({ mensaje: "Contresena inválida" });
-                }
-            })
-        }
-    })
-}
-
-function EditarEmpresa(req, res) {
-    var idUser = req.params.idUsuario;
-    var parametros = req.body;
-
-    if (req.user.rol == 'Empresa') {
-        if (idUser !== req.user.sub) return res.status(500).send({ mensaje: "No eres admin, no puedes editar" });
-        Usuarios.findByIdAndUpdate(idUser, parametros, { new: true }, (err, usuarioActualizado) => {
-            if (err) return res.status(500).send({ message: "Error en la peticion" });
-            if (!usuarioActualizado) return res.status(500).send({ mensanje: "Error en la busqueda" });
-            return res.status(200).send({ empresa: usuarioActualizado });
-        })
-    } else {
-        Usuarios.findByIdAndUpdate(idUser, parametros, { new: true }, (err, usuarioActualizado) => {
-            if (err) return res.status(500).send({ mensanje: "Error en la peticion" });
-            if (!usuarioActualizado) return res.status(500).send({ mensanje: "Error en la busqueda" });
-            return res.status(200).send({ usuarios: usuarioActualizado });
-        })
-    }
-}
-
-function EliminarEmpresa(req, res) {
-    var idUser = req.params.idUsuario;
-
-    if (req.user.rol == 'Empresa') {
-        if (idUser !== req.user.sub) return res.status(500).send({ mensaje: "No eres admin, no puedes eliminar" });
-        Usuarios.findByIdAndDelete(idUser, { new: true }, (err, usuarioEliminado) => {
-            if (err) return res.status(500).send({ mensaje: "Error en la peticion" });
-            if (!usuarioEliminado) return res.status(404).send({ mensaje: "Error en la busqueda" });
-            return res.status(200).send({ empresa: usuarioEliminado })
-        })
-    } else if (req.user.rol == 'Admin') {
-        Usuarios.findByIdAndDelete(idUser, { new: true }, (err, usuarioEliminado) => {
-            if (err) return res.status(500).send({ mensanje: "Error en la peticion" });
-            if (!usuarioEliminado) return res.status(404).send({ mensanje: "Error en la busqueda" });
-            return res.status(200).send({ usuarios: usuarioEliminado })
-        })
-    } else {
-        return res.status(500).send({ mensanje: "Error en la petición" })
-    }
-}
-
-function UsuarioInicial(){
-    Usuarios.find({rol: 'Admin', usuario: 'Admin'}, (err, usuarioEcontrado) => {
-        if(usuarioEcontrado.length ==0){
-            bcrypt.hash('123456', null, null, (err, passwordEncriptada) => {
-                Usuarios.create({
-                    nombreEmpresa: null,
-                    usuario: 'Admin',
-                    password: passwordEncriptada,
-                    rol: 'Admin'
                 })
-            })
+
+        } else {
+            return res.status(500)
+                .send({ mensaje: 'Error, el correo no se encuentra registrado.'})
         }
     })
 }
+
+function EditarUsuario(req, res) {
+    var idUser = req.params.idUsuario;
+    var parametros = req.body;    
+
+    if ( idUser !== req.user.sub ) return res.status(500)
+        .send({ mensaje: 'No puede editar otros usuarios'});
+
+    Usuario.findByIdAndUpdate(req.user.sub, parametros, {new : true},
+        (err, usuarioActualizado)=>{
+            if(err) return res.status(500)
+                .send({ mensaje: 'Error en la peticion' });
+            if(!usuarioActualizado) return res.status(500)
+                .send({ mensaje: 'Error al editar el Usuario'});
+            
+            return res.status(200).send({usuario : usuarioActualizado})
+        })
+}
+
+function agregarProductoCarrito(req, res) {
+    const usuarioLogeado = req.user.sub;
+    const parametros = req.body;
+
+    Producto.findOne({ nombre: parametros.nombreProducto }, (err, productoEncontrado)=>{
+        if(err) return res.status(500).send({ mensaje: "Error en la peticion"});
+        if(!productoEncontrado) return res.status(404).send({ mensaje: 'Error al obtener el Producto'});
+
+        Usuario.findByIdAndUpdate(usuarioLogeado, { $push: { carrito: { nombreProducto: parametros.nombreProducto,
+            cantidadComprada: parametros.cantidad, precioUnitario: productoEncontrado.precio } } }, { new: true}, 
+            (err, usuarioActualizado)=>{
+                if(err) return res.status(500).send({ mensaje: "Error en la peticion de Usuario"});
+                if(!usuarioActualizado) return res.status(500).send({ mensaje: 'Error al agregar el producto al carrito'});
+
+                let totalCarritoLocal = 0;
+
+                for(let i = 0; i < usuarioActualizado.carrito.length; i++){
+                    // totalCarritoLocal = totalCarritoLocal + usuarioActualizado.carrito[i].precioUnitario;
+                    totalCarritoLocal += usuarioActualizado.carrito[i].precioUnitario;
+                }
+
+                Usuario.findByIdAndUpdate(usuarioLogeado, { totalCarrito: totalCarritoLocal }, {new: true},
+                    (err, totalActualizado)=> {
+                        if(err) return res.status(500).send({ mensaje: "Error en la peticion de Total Carrito"});
+                        if(!totalActualizado) return res.status(500).send({ mensaje: 'Error al modificar el total del carrito'});
+
+                        return res.status(200).send({ usuario: totalActualizado })
+                    })
+            })
+    })
+
+
+    
+}
+
+function carritoAfactura(req, res){
+
+    // const facturaModel = new Factura();
+
+    /* Usuario.findById(req.user.sub, (err, usuarioEncontrado)=>{
+        
+        facturaModel.listaProductos = usuarioEncontrado.carrito;
+        facturaModel.idUsuario = req.user.sub;
+        facturaModel.totalFactura = usuarioEncontrado.totalCarrito;
+
+        for (let i = 0; i < usuarioEncontrado.carrito.length; i++) {
+            Producto.findByOneAndUpdate({nombre: usuarioEncontrado.carrito[i].nombreProducto} , 
+                {  $inc : { cantidad: usuarioEncontrado.carrito[i].cantidadComprada * -1, 
+                    vendido: usuarioEncontrado.carrito[i].cantidadComprada }})
+        }
+    }) */
+
+    Usuario.findByIdAndUpdate(req.user.sub, { $set: { carrito: [] }, totalCarrito: 0 }, { new: true }, 
+        (err, carritoVacio)=>{
+            return res.status(200).send({ usuario: carritoVacio })
+        })
+
+}
+
 module.exports = {
-    RegistrarEmpresa,
+    Registrar,
     Login,
-    EditarEmpresa,
-    EliminarEmpresa,
-    UsuarioInicial
+    EditarUsuario,
+    agregarProductoCarrito,
+    carritoAfactura
 }
